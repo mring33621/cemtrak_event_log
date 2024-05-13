@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import yargs from 'yargs';
-import { initDb } from './db.js';
-import { insertEvent } from './events.js';
+import {db, initDb} from './db.js';
+import {insertEvent} from './events.js';
 
 // Parse command line arguments
 const argv = yargs(process.argv.slice(2))
@@ -21,7 +21,7 @@ const argv = yargs(process.argv.slice(2))
     .argv;
 
 // Create Fastify instance
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({logger: true});
 
 // Declare an index route
 fastify.get('/', function (request, reply) {
@@ -33,9 +33,33 @@ fastify.post('/events', async (request, reply) => {
     try {
         const event = request.body;
         await insertEvent(event);
-        reply.code(201).send({ message: 'OK' });
+        reply.code(201).send({message: 'OK'});
     } catch (error) {
-        reply.code(400).send({ error: error.message });
+        reply.code(400).send({error: error.message});
+    }
+});
+
+// CSV GET route
+fastify.get('/events/datadump', async (request, reply) => {
+    try {
+        const rows = await db.all('SELECT * FROM cemtrak_events ORDER BY timestamp ASC');
+
+        // Convert data to CSV format
+        const csvHeader = 'external_id,state,timestamp\n';
+        const csvRows = rows.map(row =>
+            `${row.external_id},${row.state},${row.timestamp}`
+        ).join('\n');
+        const csvData = csvHeader + csvRows;
+
+        reply
+            .code(200)
+            .header('Content-Type', 'text/csv')
+            .header('Content-Disposition', 'attachment; filename="cemtrak_events.csv"')
+            .send(csvData);
+
+    } catch (error) {
+        // Handle potential errors
+        reply.code(500).send({error: error.message});
     }
 });
 
@@ -46,7 +70,7 @@ const start = async () => {
         await initDb();
 
         // Start listening on the specified host and port
-        await fastify.listen({ host: argv.host, port: argv.port });
+        await fastify.listen({host: argv.host, port: argv.port});
         fastify.log.info(`Server listening at http://${argv.host}:${argv.port}`);
     } catch (err) {
         fastify.log.error(err);
